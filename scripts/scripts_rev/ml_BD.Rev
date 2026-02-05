@@ -1,0 +1,101 @@
+################################################################################
+#
+# RevBayes Example: Bayesian inference of diversification rates under a
+#                   constant-rate pure-birth model
+#
+#
+# authors: Sebastian Hoehna and Tracy A. Heath
+#
+################################################################################
+
+#######################
+# Reading in the Data #
+#######################
+
+###### This just defines a single model for all sites #######
+
+### Read in sequence data for both genes
+
+T <- readTrees("Rev_in/97_2101_ingroup.nex")[1]
+
+# Get some useful variables from the data. We need these later on.
+taxa <- T.taxa()
+
+
+# Create some vector for the moves and monitors of this analysis
+moves    = VectorMoves()
+monitors = VectorMonitors()
+
+
+######################
+# pure-birth  model  #
+######################
+
+### the birth rate is a stochastic random variable drawn from a uniform prior
+birth_rate ~ dnUniform(0,100.0)
+death_rate ~ dnUniform(0,100.0)
+
+### MCMC samples this variable using a scale proposal
+moves.append( mvScale(birth_rate,lambda=1.0,tune=true,weight=3.0) )
+moves.append( mvScale(death_rate,lambda=1.0,tune=true,weight=3.0) )
+
+up_down_scale = mvUpDownScale(weight=3.0)
+up_down_scale.addVariable( birth_rate, up=TRUE )
+up_down_scale.addVariable( death_rate, up=TRUE )
+moves.append( up_down_scale )
+
+# diversification and turnover 
+
+diversification := birth_rate - death_rate
+rel_extinction  := death_rate / birth_rate
+
+### rho is the probability of sampling species at the present
+### fix this to 233/367, since there are ~367 described species of primates
+### and we have sampled 233
+rho <- 0.96
+
+### the BDP is conditioned on the root time, we can get this value from our tree and set a constant node
+root_time <- T.rootAge()
+
+### the time tree is a stochastic node modeled by the constant rate birth-death process (dnBDP)
+### by setting mu to the constant value 0.0, we are specifying a pure-birth process
+timetree ~ dnBDP(lambda=birth_rate, mu=death_rate, rho=rho, rootAge=root_time, samplingStrategy="uniform", condition="survival", taxa=taxa)
+
+
+
+#############
+# The Model #
+#############
+
+
+### workspace model wrapper ###
+mymodel = model(diversification)
+
+### set up the monitors that will output parameter values to file and screen
+monitors.append( mnModel(filename="Rev_out/primates_BD.log",printgen=10, separator = TAB) )
+monitors.append( mnScreen(printgen=1000, diversification) )
+
+
+
+################
+# The Analysis #
+################
+
+### compute power posterior distributions
+pow_p = powerPosterior(mymodel, moves, monitors, "Rev_out/BD_powp.out", cats=10, sampleFreq=10)
+pow_p.burnin(generations=10000,tuningInterval=200)
+pow_p.run(generations=10000)
+
+### Use stepping-stone sampling to calculate marginal likelihoods
+ss = steppingStoneSampler(file="Rev_out/BD_powp.out", powerColumnName="power", likelihoodColumnName="likelihood")
+write("Stepping stone marginal likelihood:\t", ss.marginal() )
+
+### Use path-sampling to calculate marginal likelihoods
+ps = pathSampler(file="Rev_out/BD_powp.out", powerColumnName="power", likelihoodColumnName="likelihood")
+write("Path-sampling marginal likelihood:\t", ps.marginal() )
+
+
+
+
+## quit ##
+q()

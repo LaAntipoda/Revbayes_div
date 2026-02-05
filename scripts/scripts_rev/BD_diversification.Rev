@@ -1,0 +1,68 @@
+#Stephanosporaceae Revbayes Simple diversification analysis
+#tasas constantes de especiacion y extincion 
+# Birth Death model
+
+#run as rb 
+
+
+# Cargar la filogenia desde el archivo NEXUS
+T <- readTrees("/home/daniela/GSM/Revbayes/Rev_in/98_2701_ingroup.nex")[1]
+
+# Obtener la lista de taxones en la filogenia
+taxa <- T.taxa()
+
+# Inicializar un vector vacío para los movimientos (moves) y los los monitores (monitors)
+moves = VectorMoves()
+monitors = VectorMonitors()
+
+# Especificar la tasa de especiación λ con una distribución uniforme
+birth_rate ~ dnUniform(0, 100.0)
+death_rate ~ dnUniform(0,100.0)
+
+# Agregar un movimiento MCMC para la tasa de especiación
+moves.append( mvScale(birth_rate, lambda=1.0, tune=true, weight=3.0) )
+moves.append( mvScale(death_rate,lambda=1.0,tune=true,weight=3.0) )
+
+#mixing creo 
+up_down_scale = mvUpDownScale(weight=3.0)
+up_down_scale.addVariable( birth_rate, up=TRUE )
+up_down_scale.addVariable( death_rate, up=TRUE )
+moves.append( up_down_scale )
+
+#diversi8fication and turnover 
+
+diversification := birth_rate - death_rate
+rel_extinction  := death_rate / birth_rate
+
+
+# Obtener el número de taxones en la filogenia
+num_taxa <- T.ntips()
+# Estimar la proporción de especies muestreadas Esto con cuidado
+rho <- 0.97
+#tengo 529 para 97%
+
+# Obtener la edad de la raíz del árbol
+root_time <- T.rootAge()
+
+# Definir el modelo de diversificación usando un proceso de nacimiento-muerte (BDP) #Mu = 0 es Yule
+timetree ~ dnBDP(lambda=birth_rate, mu=death_rate, rho=rho, rootAge=root_time, samplingStrategy="uniform", condition="survival", taxa=taxa)
+
+# Fijar la filogenia observada
+timetree.clamp(T)
+
+# Crear el objeto de modelo
+mymodel = model(diversification)
+
+
+#Correr el modelo
+# Monitor para registrar los estados del modelo en un archivo de salida
+monitors.append( mnModel(filename="/home/daniela/GSM/Revbayes/Rev_out/98_2701_diversification_BD.log", printgen=10, separator=TAB) )
+
+# Monitor para imprimir la tasa de especiación en la pantalla cada 1000 generaciones
+monitors.append( mnScreen(printgen=1000, diversification) )
+
+# Inicializar el MCMC con dos cadenas combinadas en un solo análisis
+mymcmc = mcmc(mymodel, monitors, moves, nruns=2, combine="mixed")
+
+# Ejecutar el MCMC por 50,000 generaciones, ajustando los movimientos cada 200 generaciones
+mymcmc.run(generations=50000, tuningInterval=200)
