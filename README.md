@@ -13,6 +13,8 @@ Reevbayes_div/
 ├── README.md
 ├── data/
 ├── scripts/
+  ├── Tree_cleaning/
+    ├── scripts/
 ├── results/
 ├── metadata/
 └── docs/
